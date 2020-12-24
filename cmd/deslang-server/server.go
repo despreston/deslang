@@ -23,12 +23,12 @@ func main() {
 		os.Exit(64)
 	}
 
-	config := ssh.Config{
+	server := ssh.Server{
 		Port:        port,
 		Address:     address,
 		IdleTimeout: time.Duration(60 * time.Second),
 		HostKeyFile: hostKeyFile,
 	}
 
-	ssh.NewServer(&config).Start()
+	server.Start()
 }

@@ -11,34 +11,18 @@ import (
 	"time"
 )
 
-type Config struct {
+type Server struct {
 	Port        uint
 	Address     string
 	IdleTimeout time.Duration
 	HostKeyFile string
 }
 
-type server struct {
-	port        uint
-	address     string
-	idleTimeout time.Duration
-	hostKeyFile string
-}
-
-func NewServer(c *Config) *server {
-	return &server{
-		port:        c.Port,
-		address:     c.Address,
-		idleTimeout: c.IdleTimeout,
-		hostKeyFile: c.HostKeyFile,
-	}
-}
-
-func (s *server) Start() {
-	path := fmt.Sprintf("%s:%d", s.address, s.port)
+func (s *Server) Start() {
+	path := fmt.Sprintf("%s:%d", s.Address, s.Port)
 	ssh.Handle(handler)
 	log.Printf("Starting deslang server @ %s", path)
-	log.Fatal(ssh.ListenAndServe(path, nil, ssh.HostKeyFile(s.hostKeyFile)))
+	log.Fatal(ssh.ListenAndServe(path, nil, ssh.HostKeyFile(s.HostKeyFile)))
 }
 
 func handler(sesh ssh.Session) {
