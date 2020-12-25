@@ -8,7 +8,7 @@ import (
 )
 
 // For lexing an io.Reader. Groups characters into tokens.
-type scanner struct {
+type Scanner struct {
 	errh    errorHandler
 	source  *bufio.Reader // source code to scan
 	tokens  []Token       // tokens seen
@@ -32,17 +32,24 @@ var keywords = map[string]tokentype{
 	"while":  _while,
 }
 
-func NewScanner(src io.Reader, errh errorHandler) *scanner {
-	return &scanner{
-		source: bufio.NewReader(src),
-		errh:   errh,
-		line:   1,
+func NewScanner(errh errorHandler) *Scanner {
+	return &Scanner{
+		errh: errh,
+		line: 1,
 	}
+}
+
+func (s *Scanner) reset() {
+	s.tokens = []Token{}
+	s.line = 1
 }
 
 // If reading the next byte fails, Scan will return an error. All syntax errors
 // are reported via the errorHandler.
-func (s *scanner) Scan() ([]Token, error) {
+func (s *Scanner) Scan(src io.Reader) ([]Token, error) {
+	s.reset()
+	s.source = bufio.NewReader(src)
+
 	for {
 		s.currLex = []byte{}
 
@@ -57,7 +64,7 @@ func (s *scanner) Scan() ([]Token, error) {
 	}
 }
 
-func (s *scanner) addToken(ttype tokentype, lit []byte) {
+func (s *Scanner) addToken(ttype tokentype, lit []byte) {
 	t := Token{
 		Type:    ttype,
 		Lexeme:  s.currLex,
@@ -70,7 +77,7 @@ func (s *scanner) addToken(ttype tokentype, lit []byte) {
 
 // Read the next character and store the byte in s.ch. Append the character to
 // s.currLex.
-func (s *scanner) next() error {
+func (s *Scanner) next() error {
 	b, err := s.source.ReadByte()
 	if err != nil {
 		return err
@@ -82,14 +89,14 @@ func (s *scanner) next() error {
 	return nil
 }
 
-func (s *scanner) peek() byte {
+func (s *Scanner) peek() byte {
 	b, _ := s.source.Peek(1)
 	return b[0]
 }
 
 // Return true if the previous character in the current lexeme matches the
 // expected byte. Advances s.source via s.next() if it's a match.
-func (s *scanner) match(expected byte) bool {
+func (s *Scanner) match(expected byte) bool {
 	if s.peek() == expected {
 		s.next()
 		return true
@@ -98,7 +105,7 @@ func (s *scanner) match(expected byte) bool {
 }
 
 // Consumes a string including the closing quotation mark.
-func (s *scanner) string() {
+func (s *Scanner) string() {
 	// Move to first character inside quote.
 	s.next()
 
@@ -113,7 +120,7 @@ func (s *scanner) string() {
 }
 
 // Consumes a number
-func (s *scanner) number() {
+func (s *Scanner) number() {
 	for unicode.IsNumber(rune(s.peek())) {
 		if err := s.next(); err != nil {
 			return
@@ -134,7 +141,7 @@ func (s *scanner) number() {
 	s.addToken(_number, s.currLex)
 }
 
-func (s *scanner) identifier() {
+func (s *Scanner) identifier() {
 	r := rune(s.peek())
 
 	for unicode.IsLetter(r) || unicode.IsNumber(r) {
@@ -151,7 +158,7 @@ func (s *scanner) identifier() {
 }
 
 // Parse s.ch
-func (s *scanner) parseCh() {
+func (s *Scanner) parseCh() {
 	switch s.ch {
 	case '(':
 		s.addToken(_left_paren, nil)

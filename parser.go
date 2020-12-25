@@ -2,30 +2,34 @@ package deslang
 
 // Parses tokens into nodes. Errors are sent to the ErrorReporter. Caller should
 // check for errors after parsing.
-type parser struct {
+type Parser struct {
 	errh    errorHandler // any errors during scanning
 	current int          // index of next token to be parsed
 	tokens  []Token
 }
 
-func NewParser(tokens []Token, errh errorHandler) *parser {
-	return &parser{
-		errh:   errh,
-		tokens: tokens,
-	}
+func NewParser(errh errorHandler) *Parser {
+	return &Parser{errh: errh}
 }
 
-func (p *parser) Parse() []Stmt {
+func (p *Parser) reset() {
+	p.tokens = []Token{}
+	p.current = 0
+}
+
+func (p *Parser) Parse(tokens []Token) []Stmt {
+	p.reset()
+	p.tokens = tokens
 	var stmts []Stmt
 
 	for !p.isAtEnd() {
-		stmts = append(stmts, p.stmt())
+		stmts = append(stmts, p.decl())
 	}
 
 	return stmts
 }
 
-func (p *parser) syntaxError(t Token, msg string) {
+func (p *Parser) syntaxError(t Token, msg string) {
 	if t.Type == _eof {
 		p.errh(t.Line, "at end", msg)
 	} else {
@@ -35,9 +39,9 @@ func (p *parser) syntaxError(t Token, msg string) {
 }
 
 // Discard tokens until a statement boundary is found. This is used for error
-// production. If an error is found during parsing, the parser will try to parse
+// production. If an error is found during parsing, the Parser will try to parse
 // the remaining code after this synchronization point.
-func (p *parser) synchronize() {
+func (p *Parser) synchronize() {
 	p.advance()
 
 	for !p.isAtEnd() {
@@ -54,12 +58,12 @@ func (p *parser) synchronize() {
 	}
 }
 
-func (p *parser) peek() Token {
+func (p *Parser) peek() Token {
 	return p.tokens[p.current]
 }
 
 // Checks if the current token's Type matches any of the given types
-func (p *parser) match(types ...tokentype) bool {
+func (p *Parser) match(types ...tokentype) bool {
 	for _, t := range types {
 		if p.check(t) {
 			p.advance()
@@ -69,29 +73,29 @@ func (p *parser) match(types ...tokentype) bool {
 	return false
 }
 
-func (p *parser) check(t tokentype) bool {
+func (p *Parser) check(t tokentype) bool {
 	if p.isAtEnd() {
 		return false
 	}
 	return p.peek().Type == t
 }
 
-func (p *parser) advance() Token {
+func (p *Parser) advance() Token {
 	if !p.isAtEnd() {
 		p.current++
 	}
 	return p.previous()
 }
 
-func (p *parser) previous() Token {
+func (p *Parser) previous() Token {
 	return p.tokens[p.current-1]
 }
 
-func (p *parser) isAtEnd() bool {
+func (p *Parser) isAtEnd() bool {
 	return p.peek().Type == _eof
 }
 
-func (p *parser) consume(tt tokentype, msg string) Token {
+func (p *Parser) consume(tt tokentype, msg string) Token {
 	if p.check(tt) {
 		return p.advance()
 	}
@@ -100,26 +104,45 @@ func (p *parser) consume(tt tokentype, msg string) Token {
 	return Token{}
 }
 
-func (p *parser) stmt() Stmt {
+func (p *Parser) decl() Stmt {
+	if p.match(_var) {
+		return p.varDecl()
+	}
+	return p.stmt()
+}
+
+func (p *Parser) varDecl() Stmt {
+	var expr Expr
+	name := p.consume(_identifier, "Expect variable name.")
+
+	if p.match(_equal) {
+		expr = p.expression()
+	}
+
+	p.consume(_semicolon, "Expect ';' after variable declaration.")
+	return VarStmt{Name: name, Expr: expr}
+}
+
+func (p *Parser) stmt() Stmt {
 	if p.match(_print) {
 		return p.printStmt()
 	}
 	return p.exprStmt()
 }
 
-func (p *parser) printStmt() Stmt {
+func (p *Parser) printStmt() Stmt {
 	val := p.expression()
 	p.consume(_semicolon, "Expect ';' after value.")
 	return PrintStmt{Expr: val}
 }
 
-func (p *parser) exprStmt() Stmt {
+func (p *Parser) exprStmt() Stmt {
 	expr := p.expression()
 	p.consume(_semicolon, "Expect ';' after value.")
 	return ExprStmt{Expr: expr}
 }
 
-func (p *parser) primary() Expr {
+func (p *Parser) primary() Expr {
 	if p.match(_false) {
 		return BasicLit{Value: "false", Kind: boolLit}
 	}
@@ -136,6 +159,10 @@ func (p *parser) primary() Expr {
 		return BasicLit{Value: string(p.previous().Literal), Kind: stringLit}
 	}
 
+	if p.match(_identifier) {
+		return Variable{Name: p.previous()}
+	}
+
 	if p.match(_left_paren) {
 		expr := p.expression()
 		p.consume(_right_paren, "Expect ')' after expression.")
@@ -147,7 +174,7 @@ func (p *parser) primary() Expr {
 	return BasicLit{Value: "", Kind: nilLit}
 }
 
-func (p *parser) unary() Expr {
+func (p *Parser) unary() Expr {
 	if p.match(_bang, _minus) {
 		op := p.previous()
 		right := p.unary()
@@ -161,7 +188,7 @@ func (p *parser) unary() Expr {
 	return p.primary()
 }
 
-func (p *parser) factor() Expr {
+func (p *Parser) factor() Expr {
 	expr := p.unary()
 
 	for p.match(_slash, _star) {
@@ -178,7 +205,7 @@ func (p *parser) factor() Expr {
 	return expr
 }
 
-func (p *parser) term() Expr {
+func (p *Parser) term() Expr {
 	expr := p.factor()
 
 	for p.match(_minus, _plus) {
@@ -195,7 +222,7 @@ func (p *parser) term() Expr {
 	return expr
 }
 
-func (p *parser) comparison() Expr {
+func (p *Parser) comparison() Expr {
 	expr := p.term()
 
 	for p.match(_greater, _greater_equal, _less, _less_equal) {
@@ -212,11 +239,11 @@ func (p *parser) comparison() Expr {
 	return expr
 }
 
-func (p *parser) expression() Expr {
+func (p *Parser) expression() Expr {
 	return p.equality()
 }
 
-func (p *parser) equality() Expr {
+func (p *Parser) equality() Expr {
 	expr := p.comparison()
 
 	for p.match(_bang_equal, _equal_equal) {

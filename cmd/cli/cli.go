@@ -34,13 +34,15 @@ func runFile(path string) error {
 	if err != nil {
 		return err
 	}
+
 	defer f.Close()
-	return deslang.Run(f, os.Stdout)
+	return deslang.NewInterpreter(os.Stdout).Run(f)
 }
 
 // Reads stdin until the first '\n' then calls 'run' with the input.
 func runPrompt() error {
 	reader := bufio.NewReader(os.Stdin)
+	interpreter := deslang.NewInterpreter(os.Stdout)
 
 	for {
 		fmt.Print("deslang> ")
@@ -53,6 +55,6 @@ func runPrompt() error {
 			return err
 		}
 
-		deslang.Run(bytes.NewReader(line), os.Stdout)
+		interpreter.Run(bytes.NewReader(line))
 	}
 }

@@ -37,7 +37,7 @@ func fromFloat(f float64) string {
 
 type (
 	Expr interface {
-		Interpret() (BasicLit, error)
+		Interpret(*Environment) (BasicLit, error)
 	}
 
 	Unary struct {
@@ -55,6 +55,10 @@ type (
 		X Expr
 	}
 
+	Variable struct {
+		Name Token
+	}
+
 	// Primitive value. It's stored as a string and the Kind field is used to
 	// figure out typecasting. It would probably be faster to split this into a
 	// few structs based on type but this way is simpler.
@@ -67,10 +71,10 @@ type (
 // ----------------------------------------------------------------------------
 // Interpretation methods
 
-func (expr Unary) Interpret() (BasicLit, error) {
+func (expr Unary) Interpret(env *Environment) (BasicLit, error) {
 	var result BasicLit
 
-	right, err := expr.Right.Interpret()
+	right, err := expr.Right.Interpret(env)
 	if err != nil {
 		return result, err
 	}
@@ -91,15 +95,15 @@ func (expr Unary) Interpret() (BasicLit, error) {
 	return result, nil
 }
 
-func (expr Binary) Interpret() (BasicLit, error) {
+func (expr Binary) Interpret(env *Environment) (BasicLit, error) {
 	var result BasicLit
 
-	left, err := expr.Left.Interpret()
+	left, err := expr.Left.Interpret(env)
 	if err != nil {
 		return result, err
 	}
 
-	right, err := expr.Right.Interpret()
+	right, err := expr.Right.Interpret(env)
 	if err != nil {
 		return result, err
 	}
@@ -181,12 +185,16 @@ func (expr Binary) Interpret() (BasicLit, error) {
 	return result, nil
 }
 
-func (expr Grouping) Interpret() (BasicLit, error) {
-	return expr.X.Interpret()
+func (expr Grouping) Interpret(env *Environment) (BasicLit, error) {
+	return expr.X.Interpret(env)
 }
 
-func (expr BasicLit) Interpret() (BasicLit, error) {
+func (expr BasicLit) Interpret(env *Environment) (BasicLit, error) {
 	return expr, nil
+}
+
+func (expr Variable) Interpret(env *Environment) (BasicLit, error) {
+	return env.Get(expr.Name)
 }
 
 // ----------------------------------------------------------------------------
@@ -194,7 +202,7 @@ func (expr BasicLit) Interpret() (BasicLit, error) {
 
 type (
 	Stmt interface {
-		Execute(io.Writer) error
+		Execute(io.Writer, *Environment) error
 	}
 
 	ExprStmt struct {
@@ -204,22 +212,37 @@ type (
 	PrintStmt struct {
 		Expr Expr
 	}
+
+	VarStmt struct {
+		Name Token
+		Expr Expr
+	}
 )
 
 // ----------------------------------------------------------------------------
 // Executor methods
 
-func (expr ExprStmt) Execute(_ io.Writer) error {
-	expr.Expr.Interpret()
+func (stmt ExprStmt) Execute(_ io.Writer, env *Environment) error {
+	stmt.Expr.Interpret(env)
 	return nil
 }
 
-func (expr PrintStmt) Execute(w io.Writer) error {
-	lit, err := expr.Expr.Interpret()
+func (stmt PrintStmt) Execute(w io.Writer, env *Environment) error {
+	lit, err := stmt.Expr.Interpret(env)
 	if err != nil {
 		return err
 	}
 
 	fmt.Fprintln(w, lit.Value)
+	return nil
+}
+
+func (stmt VarStmt) Execute(_ io.Writer, env *Environment) error {
+	lit, err := stmt.Expr.Interpret(env)
+	if err != nil {
+		return err
+	}
+
+	env.Define(string(stmt.Name.Lexeme), lit)
 	return nil
 }
