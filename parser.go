@@ -15,8 +15,14 @@ func NewParser(tokens []Token, errh errorHandler) *parser {
 	}
 }
 
-func (p *parser) Parse() Expr {
-	return p.expression()
+func (p *parser) Parse() []Stmt {
+	var stmts []Stmt
+
+	for !p.isAtEnd() {
+		stmts = append(stmts, p.stmt())
+	}
+
+	return stmts
 }
 
 func (p *parser) syntaxError(t Token, msg string) {
@@ -92,6 +98,25 @@ func (p *parser) consume(tt tokentype, msg string) Token {
 
 	p.syntaxError(p.peek(), msg)
 	return Token{}
+}
+
+func (p *parser) stmt() Stmt {
+	if p.match(_print) {
+		return p.printStmt()
+	}
+	return p.exprStmt()
+}
+
+func (p *parser) printStmt() Stmt {
+	val := p.expression()
+	p.consume(_semicolon, "Expect ';' after value.")
+	return PrintStmt{Expr: val}
+}
+
+func (p *parser) exprStmt() Stmt {
+	expr := p.expression()
+	p.consume(_semicolon, "Expect ';' after value.")
+	return ExprStmt{Expr: expr}
 }
 
 func (p *parser) primary() Expr {

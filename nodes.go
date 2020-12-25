@@ -2,6 +2,7 @@ package deslang
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 )
 
@@ -19,6 +20,16 @@ var types = map[litKind]string{
 	floatLit:  "float",
 	stringLit: "string",
 	boolLit:   "boolean",
+}
+
+func toFloat(s string) float64 {
+	// TODO: Handle err when converting string to int
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
+}
+
+func fromFloat(f float64) string {
+	return strconv.FormatFloat(f, 'E', -1, 64)
 }
 
 // ----------------------------------------------------------------------------
@@ -178,12 +189,37 @@ func (expr BasicLit) Interpret() (BasicLit, error) {
 	return expr, nil
 }
 
-func toFloat(s string) float64 {
-	// TODO: Handle err when converting string to int
-	f, _ := strconv.ParseFloat(s, 64)
-	return f
+// ----------------------------------------------------------------------------
+// Statements
+
+type (
+	Stmt interface {
+		Execute(io.Writer) error
+	}
+
+	ExprStmt struct {
+		Expr Expr
+	}
+
+	PrintStmt struct {
+		Expr Expr
+	}
+)
+
+// ----------------------------------------------------------------------------
+// Executor methods
+
+func (expr ExprStmt) Execute(_ io.Writer) error {
+	expr.Expr.Interpret()
+	return nil
 }
 
-func fromFloat(f float64) string {
-	return strconv.FormatFloat(f, 'E', -1, 64)
+func (expr PrintStmt) Execute(w io.Writer) error {
+	lit, err := expr.Expr.Interpret()
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(w, lit.Value)
+	return nil
 }

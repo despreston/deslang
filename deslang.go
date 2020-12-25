@@ -33,20 +33,17 @@ func Run(src io.Reader, out io.Writer) error {
 		return nil
 	}
 
-	expr := NewParser(tokens, errh).Parse()
+	stmts := NewParser(tokens, errh).Parse()
 
 	if hadErr {
 		return nil
 	}
 
-	result, err := expr.Interpret()
-	if err != nil {
-		fmt.Fprintln(out, err.Error())
-	} else {
-		if len(result.Value) > 0 {
-			fmt.Fprintln(out, result.Value)
-		} else {
-			fmt.Fprint(out, result.Value)
+	for _, s := range stmts {
+		err := s.Execute(out)
+		if err != nil {
+			fmt.Fprintln(out, err.Error())
+			return nil
 		}
 	}
 
