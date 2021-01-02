@@ -1,5 +1,9 @@
 package deslang
 
+import (
+	"reflect"
+)
+
 // Parses tokens into nodes. Errors are sent to the ErrorReporter. Caller should
 // check for errors after parsing.
 type Parser struct {
@@ -73,6 +77,8 @@ func (p *Parser) match(types ...tokentype) bool {
 	return false
 }
 
+// Check if the current token Type matches t. Return false if the end of the
+// source is reached.
 func (p *Parser) check(t tokentype) bool {
 	if p.isAtEnd() {
 		return false
@@ -124,10 +130,46 @@ func (p *Parser) varDecl() Stmt {
 }
 
 func (p *Parser) stmt() Stmt {
+	if p.match(_if) {
+		return p.ifStmt()
+	}
+
 	if p.match(_print) {
 		return p.printStmt()
 	}
+
+	if p.match(_left_brace) {
+		return BlockStmt{Stmts: p.block()}
+	}
+
 	return p.exprStmt()
+}
+
+func (p *Parser) exprStmt() Stmt {
+	expr := p.expression()
+	p.consume(_semicolon, "Expect ';' after value.")
+	return ExprStmt{Expr: expr}
+}
+
+func (p *Parser) ifStmt() Stmt {
+	p.consume(_left_paren, "Expect '(' after 'if'.")
+	expr := p.expression()
+	p.consume(_right_paren, "Expect ')' after if condition.")
+
+	thenBranch := p.stmt()
+	var elseBranch Stmt
+
+	if p.match(_else) {
+		elseBranch = p.stmt()
+	} else {
+		elseBranch = NilStmt{}
+	}
+
+	return IfStmt{
+		Cond: expr,
+		Then: thenBranch,
+		Else: elseBranch,
+	}
 }
 
 func (p *Parser) printStmt() Stmt {
@@ -136,10 +178,15 @@ func (p *Parser) printStmt() Stmt {
 	return PrintStmt{Expr: val}
 }
 
-func (p *Parser) exprStmt() Stmt {
-	expr := p.expression()
-	p.consume(_semicolon, "Expect ';' after value.")
-	return ExprStmt{Expr: expr}
+func (p *Parser) block() []Stmt {
+	var stmts []Stmt
+
+	for !p.check(_right_brace) {
+		stmts = append(stmts, p.decl())
+	}
+
+	p.consume(_right_brace, "Expect '}' after block.")
+	return stmts
 }
 
 func (p *Parser) primary() Expr {
@@ -240,7 +287,7 @@ func (p *Parser) comparison() Expr {
 }
 
 func (p *Parser) expression() Expr {
-	return p.equality()
+	return p.assignment()
 }
 
 func (p *Parser) equality() Expr {
@@ -255,6 +302,62 @@ func (p *Parser) equality() Expr {
 			Right: rightExpr,
 			Op:    op,
 		}
+	}
+
+	return expr
+}
+
+func (p *Parser) and() Expr {
+	expr := p.equality()
+
+	for p.match(_and) {
+		op := p.previous()
+		right := p.equality()
+
+		expr = Logical{
+			Left:  expr,
+			Right: right,
+			Op:    op,
+		}
+	}
+
+	return expr
+}
+
+func (p *Parser) or() Expr {
+	expr := p.and()
+
+	for p.match(_or) {
+		op := p.previous()
+		right := p.and()
+
+		expr = Logical{
+			Left:  expr,
+			Right: right,
+			Op:    op,
+		}
+	}
+
+	return expr
+}
+
+func (p *Parser) assignment() Expr {
+	expr := p.or()
+
+	if p.match(_equal) {
+		equals := p.previous()
+		val := p.assignment()
+
+		// check if left expr is Variable
+		f := reflect.ValueOf(expr).FieldByName("Name")
+		if f.IsValid() {
+			return Assign{
+				Name:  f.Interface().(Token),
+				Value: val,
+			}
+		}
+
+		p.errh(equals.Line, "", "Invalid assignment target.")
 	}
 
 	return expr

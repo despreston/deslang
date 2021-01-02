@@ -32,6 +32,21 @@ func fromFloat(f float64) string {
 	return strconv.FormatFloat(f, 'E', -1, 64)
 }
 
+func isTruthy(lit BasicLit) bool {
+	switch lit.Kind {
+	case nilLit:
+		return false
+	case floatLit:
+		return lit.Value != "0"
+	case stringLit:
+		return len(lit.Value) > 0
+	case boolLit:
+		return lit.Value == "true"
+	default:
+		return false
+	}
+}
+
 // ----------------------------------------------------------------------------
 // Expressions
 
@@ -50,6 +65,11 @@ type (
 		Op          Token
 	}
 
+	Assign struct {
+		Name  Token
+		Value Expr
+	}
+
 	// (X)
 	Grouping struct {
 		X Expr
@@ -57,6 +77,12 @@ type (
 
 	Variable struct {
 		Name Token
+	}
+
+	// and, or
+	Logical struct {
+		Left, Right Expr
+		Op          Token
 	}
 
 	// Primitive value. It's stored as a string and the Kind field is used to
@@ -185,6 +211,18 @@ func (expr Binary) Interpret(env *Environment) (BasicLit, error) {
 	return result, nil
 }
 
+func (expr Assign) Interpret(env *Environment) (BasicLit, error) {
+	var result BasicLit
+
+	result, err := expr.Value.Interpret(env)
+	if err != nil {
+		return result, err
+	}
+
+	env.Assign(expr.Name, result)
+	return result, nil
+}
+
 func (expr Grouping) Interpret(env *Environment) (BasicLit, error) {
 	return expr.X.Interpret(env)
 }
@@ -197,6 +235,28 @@ func (expr Variable) Interpret(env *Environment) (BasicLit, error) {
 	return env.Get(expr.Name)
 }
 
+func (expr Logical) Interpret(env *Environment) (BasicLit, error) {
+	left, err := expr.Left.Interpret(env)
+	if err != nil {
+		return BasicLit{}, nil
+	}
+
+	right, err := expr.Right.Interpret(env)
+	if err != nil {
+		return BasicLit{}, nil
+	}
+
+	if expr.Op.Type == _or {
+		if isTruthy(left) {
+			return left, nil
+		}
+	} else if !isTruthy(left) {
+		return left, nil
+	}
+
+	return right, nil
+}
+
 // ----------------------------------------------------------------------------
 // Statements
 
@@ -204,6 +264,9 @@ type (
 	Stmt interface {
 		Execute(io.Writer, *Environment) error
 	}
+
+	// Empty Stmt
+	NilStmt struct{}
 
 	ExprStmt struct {
 		Expr Expr
@@ -216,6 +279,21 @@ type (
 	VarStmt struct {
 		Name Token
 		Expr Expr
+	}
+
+	AssignStmt struct {
+		Name Token
+		Expr Expr
+	}
+
+	BlockStmt struct {
+		Stmts []Stmt
+	}
+
+	IfStmt struct {
+		Cond Expr
+		Then Stmt
+		Else Stmt
 	}
 )
 
@@ -244,5 +322,55 @@ func (stmt VarStmt) Execute(_ io.Writer, env *Environment) error {
 	}
 
 	env.Define(string(stmt.Name.Lexeme), lit)
+	return nil
+}
+
+func (stmt AssignStmt) Execute(_ io.Writer, env *Environment) error {
+	lit, err := stmt.Expr.Interpret(env)
+	if err != nil {
+		return err
+	}
+
+	env.Assign(stmt.Name, lit)
+	return nil
+}
+
+func (stmt BlockStmt) Execute(w io.Writer, env *Environment) error {
+	local := NewEnvironment(false)
+	local.Enclosing = env
+	return executeBlock(stmt.Stmts, w, local)
+}
+
+func (NilStmt) Execute(w io.Writer, env *Environment) error {
+	return nil
+}
+
+func (stmt IfStmt) Execute(w io.Writer, env *Environment) error {
+	condLit, err := stmt.Cond.Interpret(env)
+	if err != nil {
+		return err
+	}
+
+	if isTruthy(condLit) {
+		return stmt.Then.Execute(w, env)
+	} else {
+		switch stmt.Else.(type) {
+		case NilStmt:
+		default:
+			return stmt.Else.Execute(w, env)
+		}
+	}
+
+	return nil
+}
+
+func executeBlock(stmts []Stmt, w io.Writer, env *Environment) error {
+	for _, s := range stmts {
+		err := s.Execute(w, env)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

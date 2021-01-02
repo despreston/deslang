@@ -21,7 +21,7 @@ func NewInterpreter(out io.Writer) *Interpreter {
 
 	interpreter.scanner = NewScanner(interpreter.errh)
 	interpreter.parser = NewParser(interpreter.errh)
-	interpreter.env = NewEnvironment()
+	interpreter.env = NewEnvironment(true)
 	interpreter.out = out
 
 	return &interpreter
